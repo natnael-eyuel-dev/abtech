@@ -23,11 +23,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = parsed.data;
-    const {
-      transactionId,
-      merchantTransactionId,
-      status,
-      amount,
+    const { 
+      transactionId, 
+      merchantTransactionId, 
+      status, 
+      amount, 
     } = body;
 
     const amountNum = typeof amount === 'string' ? Number(amount) : amount;
@@ -130,8 +130,9 @@ export async function POST(request: NextRequest) {
     // If payment is successful, grant premium access
     if (verificationResult.status === 'SUCCESS') {
       await grantPremiumAccess(payment.user.email, 30); // 30 days premium access
-      
+      if (process.env.NODE_ENV !== "production") {
       console.log(`Premium access granted to user ${payment.user.id} via Telebirr payment`);
+      }
     }
 
     return NextResponse.json({
