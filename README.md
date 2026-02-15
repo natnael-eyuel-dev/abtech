@@ -59,6 +59,7 @@ npm run dev
 - **Supabase**: use the **Direct connection string** as `DATABASE_URL`.
 - **Redis**: required in production for OTP/rate limits and server-side reading limits.
 - **OTP email**: requires SMTP configured (`SMTP_*` + `SENDER_EMAIL`).
+- **Cloudinary**: set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (server) and `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` (client URL building).
 - **Socket.IO**: in production set `SOCKET_IO_ORIGINS` to a comma-separated allowlist.
 - **Reading limits**: controlled by `ENFORCE_VIEW_LIMITS` (defaults to true in production).
 
