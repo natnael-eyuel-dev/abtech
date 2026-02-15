@@ -9,6 +9,8 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+const debug = /^(1|true|yes|on)$/i.test(String(process.env.SMTP_DEBUG || ""));
+
 export async function POST(req: NextRequest) {
   try {
     const { email, captchaToken, honeypot } = await req.json();
@@ -60,14 +62,22 @@ export async function POST(req: NextRequest) {
         </div>`;
       await sendEmail({ to: email, subject: "Confirm your newsletter subscription", html, text: `Confirm your subscription: ${url}` });
     } catch (e: any) {
-      console.warn("[newsletter] Failed to send confirmation email", {
-        message: e?.message,
-        code: e?.code,
-        command: e?.command,
-        response: e?.response,
-        responseCode: e?.responseCode,
-        stack: e?.stack,
-      });
+      if (debug || process.env.NODE_ENV !== "production") {
+        console.warn("[newsletter] Failed to send confirmation email", {
+          message: e?.message,
+          code: e?.code,
+          command: e?.command,
+          response: e?.response,
+          responseCode: e?.responseCode,
+          stack: e?.stack,
+        });
+      } else {
+        // Keep production logs minimal (no stack dumps unless debug is enabled)
+        console.warn("[newsletter] Failed to send confirmation email", {
+          message: e?.message,
+          code: e?.code,
+        });
+      }
     }
 
     return NextResponse.json({ message: "Check your inbox to confirm your subscription.", pending: pending });
