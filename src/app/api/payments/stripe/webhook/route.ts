@@ -40,7 +40,9 @@ export async function POST(request: NextRequest) {
         await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent);
         break;
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`Unhandled event type: ${event.type}`);
+        }
     }
 
     return NextResponse.json({ received: true });
@@ -183,7 +185,9 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     });
 
     // Optionally send notification to user about failed payment
-    console.log(`Payment failed for user ${user.id}`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`Payment failed for user ${user.id}`);
+    }
   } catch (error) {
     console.error('Error handling invoice payment failed:', error);
   }
@@ -212,7 +216,9 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
       }
     });
 
-    console.log(`Subscription cancelled for user ${user.id}`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`Subscription cancelled for user ${user.id}`);
+    }
   } catch (error) {
     console.error('Error handling subscription deletion:', error);
   }
