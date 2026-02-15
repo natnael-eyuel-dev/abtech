@@ -1,67 +1,110 @@
-// Mock Redis implementation for development
-console.warn('⚠️ Using mock Redis implementation for development')
+import { Redis as UpstashRedis } from "@upstash/redis";
 
-// Use global storage to persist across module reloads
+export type RedisLike = {
+  get: (key: string) => Promise<string | null>;
+  set: (key: string, value: string, options?: { ex?: number }) => Promise<unknown>;
+  del: (key: string) => Promise<unknown>;
+  incr: (key: string) => Promise<number>;
+  expire: (key: string, seconds: number) => Promise<number>;
+  ttl: (key: string) => Promise<number>;
+};
+
+type MemoryEntry = { value: string; expiresAt: number | null };
+
 declare global {
-  var __mockRedisStorage: Map<string, string> | undefined
+  var __memoryRedisStorage: Map<string, MemoryEntry> | undefined;
 }
 
-// Use global storage or create a new one
-const memoryStorage = global.__mockRedisStorage || new Map()
-global.__mockRedisStorage = memoryStorage
+const memoryStorage: Map<string, MemoryEntry> =
+  global.__memoryRedisStorage ?? new Map<string, MemoryEntry>();
+global.__memoryRedisStorage = memoryStorage;
 
-// Debug function to print current storage
-const debugStorage = () => {
-  console.log('[Mock Redis] Current storage:', Array.from(memoryStorage.entries()))
-}
+const nowMs = () => Date.now();
+const isExpired = (entry: MemoryEntry) =>
+  entry.expiresAt !== null && entry.expiresAt <= nowMs();
 
-const mockRedis = {
-  get: async (key: string) => {
-    const value = memoryStorage.get(key)
-    console.log(`[Mock Redis] GET ${key} = ${value}`)
-    debugStorage()
-    return value
-  },
-  set: async (key: string, value: string, options?: { ex?: number }) => {
-    console.log(`[Mock Redis] SET ${key} = ${value}`, options)
-    memoryStorage.set(key, value)
-    if (options?.ex) {
-      // For testing purposes, disable TTL completely or make it very long
-      console.log(`[Mock Redis] TTL disabled for testing purposes`)
-      // Comment out the TTL for testing
-      /*
-      setTimeout(() => {
-        memoryStorage.delete(key)
-        console.log(`[Mock Redis] EXPIRED ${key}`)
-      }, options.ex * 1000)
-      */
+const memoryRedis: RedisLike = {
+  get: async (key) => {
+    const entry = memoryStorage.get(key);
+    if (!entry) return null;
+    if (isExpired(entry)) {
+      memoryStorage.delete(key);
+      return null;
     }
-    debugStorage()
+    return entry.value;
   },
-  del: async (key: string) => {
-    console.log(`[Mock Redis] DEL ${key}`)
-    memoryStorage.delete(key)
-    debugStorage()
+  set: async (key, value, options) => {
+    const expiresAt =
+      typeof options?.ex === "number" ? nowMs() + options.ex * 1000 : null;
+    memoryStorage.set(key, { value, expiresAt });
+    return "OK";
   },
-  incr: async (key: string) => {
-    const current = parseInt(memoryStorage.get(key) || '0')
-    const newValue = current + 1
-    memoryStorage.set(key, newValue.toString())
-    console.log(`[Mock Redis] INCR ${key} = ${newValue}`)
-    debugStorage()
-    return newValue
+  del: async (key) => {
+    memoryStorage.delete(key);
+    return 1;
   },
-  expire: async (key: string, seconds: number) => {
-    console.log(`[Mock Redis] EXPIRE ${key} ${seconds}s`)
-    // Disable expire for testing
-    console.log(`[Mock Redis] EXPIRE disabled for testing`)
-    return 1
+  incr: async (key) => {
+    const existing = await memoryRedis.get(key);
+    const current = Number.parseInt(existing ?? "0", 10);
+    const next = Number.isFinite(current) ? current + 1 : 1;
+    await memoryRedis.set(key, String(next));
+    return next;
   },
-  ttl: async (key: string) => {
-    const hasKey = memoryStorage.has(key)
-    console.log(`[Mock Redis] TTL ${key} = ${hasKey ? 3600 : -1}`)
-    return hasKey ? 3600 : -1 // Return 1 hour for existing keys
-  }
-}
+  expire: async (key, seconds) => {
+    const entry = memoryStorage.get(key);
+    if (!entry) return 0;
+    entry.expiresAt = nowMs() + seconds * 1000;
+    memoryStorage.set(key, entry);
+    return 1;
+  },
+  ttl: async (key) => {
+    const entry = memoryStorage.get(key);
+    if (!entry) return -2; // Redis: key does not exist
+    if (isExpired(entry)) {
+      memoryStorage.delete(key);
+      return -2;
+    }
+    if (entry.expiresAt === null) return -1; // Redis: no expire
+    return Math.max(0, Math.ceil((entry.expiresAt - nowMs()) / 1000));
+  },
+};
 
-export default mockRedis
+const upstashUrl = process.env.UPSTASH_REDIS_REST_URL;
+const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+const hasUpstash = Boolean(upstashUrl && upstashToken);
+
+const upstashRedis: RedisLike | null = hasUpstash
+  ? (() => {
+      const client = new UpstashRedis({
+        url: upstashUrl!,
+        token: upstashToken!,
+      });
+
+      const wrapped: RedisLike = {
+        get: async (key) => {
+          const v = await client.get<string>(key);
+          return v ?? null;
+        },
+        set: async (key, value, options) => {
+          // @upstash/redis uses `set(key, value, { ex })`
+          return await (client as any).set(
+            key,
+            value,
+            options?.ex ? { ex: options.ex } : undefined,
+          );
+        },
+        del: async (key) => await client.del(key),
+        incr: async (key) => await client.incr(key),
+        expire: async (key, seconds) => await client.expire(key, seconds),
+        ttl: async (key) => await client.ttl(key),
+      };
+
+      return wrapped;
+    })()
+  : null;
+
+const redis: RedisLike = upstashRedis ?? memoryRedis;
+export default redis;
+
+export const redisConfigured = Boolean(upstashRedis);
+export const redisProvider: "upstash" | "memory" = upstashRedis ? "upstash" : "memory";
