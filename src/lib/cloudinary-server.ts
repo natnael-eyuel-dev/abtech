@@ -3,15 +3,40 @@
 
 import { v2 as cloudinary } from 'cloudinary'
 
-// Configure Cloudinary for server-side use
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-  secure: true,
-})
+// Lazy-initialize Cloudinary configuration to avoid build-time errors
+let cloudinaryConfigured = false;
 
-export default cloudinary
+function ensureCloudinaryConfigured() {
+  if (cloudinaryConfigured) return;
+  
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  
+  if (!cloudName || !apiKey || !apiSecret) {
+    throw new Error(
+      'Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables.'
+    );
+  }
+  
+  cloudinary.config({
+    cloud_name: cloudName,
+    api_key: apiKey,
+    api_secret: apiSecret,
+    secure: true,
+  });
+  
+  cloudinaryConfigured = true;
+}
+
+// Export a getter that ensures configuration before returning the client
+function getCloudinary() {
+  ensureCloudinaryConfigured();
+  return cloudinary;
+}
+
+// Export the configured cloudinary instance (lazy-initialized)
+export default getCloudinary()
 
 // Server-side Cloudinary service
 export class ServerCloudinaryService {
@@ -30,11 +55,12 @@ export class ServerCloudinaryService {
     }
   ) {
     try {
+      const cl = getCloudinary();
       const asString = typeof file === 'string'
         ? file
         : `data:${options?.contentType || 'application/octet-stream'};base64,${file.toString('base64')}`
 
-      const result = await cloudinary.uploader.upload(asString, {
+      const result = await cl.uploader.upload(asString, {
         folder: options?.folder || 'my-project',
         public_id: options?.public_id,
         transformation: options?.transformation,
@@ -88,7 +114,8 @@ export class ServerCloudinaryService {
     }
   ) {
     try {
-      const result = await cloudinary.uploader.upload(url, {
+      const cl = getCloudinary();
+      const result = await cl.uploader.upload(url, {
         folder: options?.folder || 'my-project',
         public_id: options?.public_id,
         transformation: options?.transformation,
@@ -113,7 +140,8 @@ export class ServerCloudinaryService {
    */
   static async deleteImage(publicId: string) {
     try {
-      const result = await cloudinary.uploader.destroy(publicId)
+      const cl = getCloudinary();
+      const result = await cl.uploader.destroy(publicId)
       return {
         success: true,
         data: result,
@@ -132,7 +160,8 @@ export class ServerCloudinaryService {
    */
   static async deleteResource(publicId: string, resourceType: 'image' | 'video' | 'raw' = 'image') {
     try {
-      const result = await cloudinary.uploader.destroy(publicId, { resource_type: resourceType })
+      const cl = getCloudinary();
+      const result = await cl.uploader.destroy(publicId, { resource_type: resourceType })
       return { success: true, data: result }
     } catch (error) {
       console.error('Cloudinary delete resource error:', error)
@@ -148,7 +177,8 @@ export class ServerCloudinaryService {
    */
   static async deleteImages(publicIds: string[]) {
     try {
-      const result = await cloudinary.api.delete_resources(publicIds)
+      const cl = getCloudinary();
+      const result = await cl.api.delete_resources(publicIds)
       return {
         success: true,
         data: result,
@@ -167,13 +197,14 @@ export class ServerCloudinaryService {
    */
   static async getImageInfo(publicId: string) {
     try {
+      const cl = getCloudinary();
       // Try raw resources first (our course PDFs are uploaded as raw)
       let result: any
       try {
-        result = await cloudinary.api.resource(publicId, { resource_type: 'raw' })
+        result = await cl.api.resource(publicId, { resource_type: 'raw' })
       } catch (e) {
         // Fallback to image resource type to aid debugging if mis-uploaded
-        result = await cloudinary.api.resource(publicId, { resource_type: 'image' })
+        result = await cl.api.resource(publicId, { resource_type: 'image' })
       }
       return {
         success: true,
@@ -197,7 +228,8 @@ export class ServerCloudinaryService {
     prefix?: string
   }) {
     try {
-      const result = await cloudinary.api.resources({
+      const cl = getCloudinary();
+      const result = await cl.api.resources({
         type: 'upload',
         resource_type: 'raw',
         prefix: folder,
@@ -233,7 +265,8 @@ export class ServerCloudinaryService {
     }
   ) {
     try {
-      const url = cloudinary.url(publicId, {
+      const cl = getCloudinary();
+      const url = cl.url(publicId, {
         sign_url: true,
         type: 'private',
         ...options,
