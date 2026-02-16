@@ -35,8 +35,8 @@ function getCloudinary() {
   return cloudinary;
 }
 
-// Export the configured cloudinary instance (lazy-initialized)
-export default getCloudinary()
+// Export the getter function (not the instance) to prevent build-time initialization
+export default getCloudinary
 
 // Server-side Cloudinary service
 export class ServerCloudinaryService {
