@@ -3,7 +3,6 @@ import { getServerSession } from 'next-auth';
 import { authConfig } from '@/lib/auth/config';
 import { db } from '@/lib/db';
 import bcrypt from 'bcryptjs';
-import { signOut } from 'next-auth/react';
 
 export async function POST(request: NextRequest) {
   try {
@@ -94,8 +93,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       message: 'Account deleted successfully' 
     });
-
-    signOut()
   } catch (error) {
     console.error('Error deleting account:', error);
     return NextResponse.json({ 
